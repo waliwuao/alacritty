@@ -14,6 +14,14 @@ cargo build --release
 
 二进制位于 `target/release/alacritty`。
 
+### 一键安装（Debian/Ubuntu）
+
+```sh
+chmod +x install.sh && ./install.sh
+```
+
+自动完成：安装 zsh/Rust → 配置清华镜像 → 编译 → 配置 zshrc → 设为默认终端。
+
 ### 依赖
 
 - Rust >= 1.85.0
