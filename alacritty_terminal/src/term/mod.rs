@@ -756,6 +756,9 @@ impl<T> Term<T> {
 
         // Resize damage information.
         self.damage.resize(num_cols, num_lines);
+
+        // Clear stale command markers after resize.
+        self.command_markers.clear();
     }
 
     /// Active terminal modes.
