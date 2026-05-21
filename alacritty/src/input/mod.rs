@@ -386,6 +386,43 @@ impl<T: EventListener> Execute<T> for Action {
             Action::ClearLogNotice => ctx.pop_message(),
             Action::CreateNewWindow => ctx.create_new_window(),
             Action::SpawnNewInstance => ctx.spawn_new_instance(),
+            Action::CommandPrev => {
+                let term = ctx.terminal_mut();
+                if !term.mode().contains(TermMode::VI) {
+                    term.toggle_vi_mode();
+                }
+                let from = term.vi_mode_cursor.point.line;
+                if let Some(target) = term.command_prev(from) {
+                    term.scroll_to_line(target);
+                }
+                ctx.mark_dirty();
+            },
+            Action::CommandNext => {
+                let term = ctx.terminal_mut();
+                if !term.mode().contains(TermMode::VI) {
+                    term.toggle_vi_mode();
+                }
+                let from = term.vi_mode_cursor.point.line;
+                if let Some(target) = term.command_next(from) {
+                    term.scroll_to_line(target);
+                }
+                ctx.mark_dirty();
+            },
+            Action::CommandAccept => {
+                let term = ctx.terminal_mut();
+                if term.mode().contains(TermMode::VI) {
+                    term.toggle_vi_mode();
+                }
+                term.scroll_display(Scroll::Bottom);
+                ctx.mark_dirty();
+            },
+            Action::CommandCopy => {
+                let term = ctx.terminal();
+                let text = term.command_region_text(term.vi_mode_cursor.point.line);
+                if !text.is_empty() {
+                    ctx.clipboard_mut().store(ClipboardType::Clipboard, text);
+                }
+            },
             _ => (),
         }
     }

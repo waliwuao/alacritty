@@ -272,6 +272,8 @@ pub struct Term<T> {
     /// Cursor for keyboard selection.
     pub vi_mode_cursor: ViModeCursor,
 
+    pub command_markers: Vec<index::Line>,
+
     pub selection: Option<Selection>,
 
     /// Currently active grid.
@@ -434,6 +436,7 @@ impl<T> Term<T> {
             keyboard_mode_stack: Default::default(),
             active_charset: Default::default(),
             vi_mode_cursor: Default::default(),
+            command_markers: Vec::new(),
             cursor_style: Default::default(),
             colors: color::Colors::default(),
             title_stack: Default::default(),
@@ -493,6 +496,57 @@ impl<T> Term<T> {
     #[inline]
     fn mark_fully_damaged(&mut self) {
         self.damage.full = true;
+    }
+
+    /// Find the command start line before the given position.
+    pub fn command_prev(&self, from: Line) -> Option<Line> {
+        self.command_markers.iter().rev().find(|&&l| l < from).copied()
+    }
+
+    /// Find the command start line after the given position.
+    pub fn command_next(&self, from: Line) -> Option<Line> {
+        self.command_markers.iter().find(|&&l| l > from).copied()
+    }
+
+    /// Scroll the viewport to center the given line.
+    pub fn scroll_to_line(&mut self, line: Line)
+    where
+        T: EventListener,
+    {
+        let display_offset = self.grid.display_offset() as i32;
+        let screen_lines = self.grid.screen_lines() as i32;
+        let max_scroll_limit = self.grid.scroll_limit() as i32;
+        let target_offset = (screen_lines / 2 - line.0).clamp(0, max_scroll_limit);
+        let delta = target_offset - display_offset;
+        if delta != 0 {
+            self.scroll_display(Scroll::Delta(delta));
+        }
+        self.vi_mode_cursor.point = Point::new(line, Column(0));
+    }
+
+    /// Get the text region for a command starting at `start_line`.
+    ///
+    /// Returns all lines from start_line up to (but not including) the next command marker.
+    pub fn command_region_text(&self, start_line: Line) -> String {
+        let end_line = self
+            .command_markers
+            .iter()
+            .find(|&&l| l > start_line)
+            .copied()
+            .unwrap_or(self.grid.bottommost_line());
+
+        let mut text = String::new();
+        let mut line = start_line;
+        while line <= end_line {
+            let row = &self.grid[line];
+            let row_str: String = row.into_iter().map(|c| c.c).collect();
+            text.push_str(row_str.trim_end());
+            line += 1;
+            if line <= end_line {
+                text.push('\n');
+            }
+        }
+        text
     }
 
     /// Set new options for the [`Term`].
@@ -786,6 +840,14 @@ impl<T> Term<T> {
         if (top <= *line) && region.end > *line {
             *line = cmp::max(*line - lines, top);
         }
+
+        // Scroll command markers.
+        for marker in &mut self.command_markers {
+            if region.start == 0 || (region.start <= *marker && region.end > *marker) {
+                *marker = *marker - lines;
+            }
+        }
+
         self.mark_fully_damaged();
     }
 
@@ -1855,6 +1917,7 @@ impl<T: EventListener> Handler for Term<T> {
 
         self.event_proxy.send_event(Event::CursorBlinkingChange);
         self.mark_fully_damaged();
+        self.command_markers.clear();
     }
 
     #[inline]
@@ -2229,6 +2292,18 @@ impl<T: EventListener> Handler for Term<T> {
         };
 
         self.event_proxy.send_event(title_event);
+    }
+
+    #[inline]
+    fn shell_integration_kind(&mut self, kind: u8) {
+        if kind == b'A' {
+            let line = self.grid.cursor.point.line;
+            // Avoid duplicate markers at the same or earlier line (after scroll).
+            if self.command_markers.last().is_some_and(|&l| l >= line) {
+                return;
+            }
+            self.command_markers.push(line);
+        }
     }
 
     #[inline]

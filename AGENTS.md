@@ -53,5 +53,17 @@ cargo build --release                   # 发布构建
 ## 注意事项
 
 - `x11-clipboard` 使用了 git patch（见 workspace `Cargo.toml` 的 `[patch.crates-io]`）
+- `vte` crate 被本地 fork 到 `vte/` 目录，添加了 `Handler::shell_integration_kind` 方法用于 OSC 133 解析
 - 修改 `config.rs` 时需同步更新 `extra/man/` 下的 man pages
 - 默认 features：`x11` + `wayland`。如需仅保留一个或忽略系统库依赖，调整 `--no-default-features` / `--features`
+
+## 命令导航器
+
+基于 OSC 133 shell integration 的命令历史导航，实现在 `alacritty_terminal/src/term/mod.rs`：
+
+- `command_markers: Vec<Line>` — 存储命令起始行；`scroll_up` 时同步移位
+- `shell_integration_kind(b'A')` — vte Handler 回调，在 `precmd` 时创建 marker
+- `command_prev/next` — 查找前/后一个 marker
+- `command_region_text` — 提取两个 marker 之间的文本（Ctrl+Y 复制）
+- `scroll_to_line` — 居中滚动到指定行（Ctrl+Up/Down）
+- 快捷键处理见 `alacritty/src/input/mod.rs` 和 `alacritty/src/config/bindings.rs`

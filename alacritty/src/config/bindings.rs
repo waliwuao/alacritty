@@ -163,6 +163,18 @@ pub enum Action {
     /// Clear the display buffer(s) to remove history.
     ClearHistory,
 
+    /// Navigate to the previous command boundary.
+    CommandPrev,
+
+    /// Navigate to the next command boundary.
+    CommandNext,
+
+    /// Jump to the latest command position.
+    CommandAccept,
+
+    /// Copy the current command and its output.
+    CommandCopy,
+
     /// Hide the Alacritty window.
     Hide,
 
@@ -458,6 +470,11 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Backspace, ModifiersState::ALT,     ~BindingMode::VI, ~BindingMode::SEARCH, ~BindingMode::REPORT_ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_ESC_CODES; Action::Esc("\x1b\x7f".into());
         Backspace, ModifiersState::SHIFT,   ~BindingMode::VI, ~BindingMode::SEARCH, ~BindingMode::REPORT_ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_ESC_CODES; Action::Esc("\x7f".into());
         Enter => KeyLocation::Numpad, ~BindingMode::VI, ~BindingMode::SEARCH, ~BindingMode::REPORT_ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_ESC_CODES; Action::Esc("\n".into());
+        // Command navigation.
+        ArrowUp,    ModifiersState::CONTROL, ~BindingMode::VI, ~BindingMode::SEARCH; Action::CommandPrev;
+        ArrowDown,  ModifiersState::CONTROL, ~BindingMode::VI, ~BindingMode::SEARCH; Action::CommandNext;
+        Enter,      ModifiersState::CONTROL, ~BindingMode::VI, ~BindingMode::SEARCH; Action::CommandAccept;
+        "y",        ModifiersState::CONTROL, ~BindingMode::VI, ~BindingMode::SEARCH; Action::CommandCopy;
         // Vi mode.
         Space, ModifiersState::SHIFT | ModifiersState::CONTROL, ~BindingMode::SEARCH; Action::ToggleViMode;
         Space, ModifiersState::SHIFT | ModifiersState::CONTROL, +BindingMode::VI, ~BindingMode::SEARCH; Action::ScrollToBottom;
@@ -465,8 +482,11 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         "i",                                +BindingMode::VI, ~BindingMode::SEARCH; Action::ToggleViMode;
         "i",                                +BindingMode::VI, ~BindingMode::SEARCH; Action::ScrollToBottom;
         "c",      ModifiersState::CONTROL,  +BindingMode::VI, ~BindingMode::SEARCH; Action::ToggleViMode;
-        "y",      ModifiersState::CONTROL,  +BindingMode::VI, ~BindingMode::SEARCH; Action::ScrollLineUp;
+        "y",      ModifiersState::CONTROL,  +BindingMode::VI, ~BindingMode::SEARCH; Action::CommandCopy;
         "e",      ModifiersState::CONTROL,  +BindingMode::VI, ~BindingMode::SEARCH; Action::ScrollLineDown;
+        ArrowUp,    ModifiersState::CONTROL,  +BindingMode::VI, ~BindingMode::SEARCH; Action::CommandPrev;
+        ArrowDown,  ModifiersState::CONTROL,  +BindingMode::VI, ~BindingMode::SEARCH; Action::CommandNext;
+        Enter,      ModifiersState::CONTROL,  +BindingMode::VI, ~BindingMode::SEARCH; Action::CommandAccept;
         "g",                                +BindingMode::VI, ~BindingMode::SEARCH; Action::ScrollToTop;
         "g",      ModifiersState::SHIFT,    +BindingMode::VI, ~BindingMode::SEARCH; Action::ScrollToBottom;
         "b",      ModifiersState::CONTROL,  +BindingMode::VI, ~BindingMode::SEARCH; Action::ScrollPageUp;

@@ -34,6 +34,23 @@ alacritty --config-file config/alacritty.toml
 3. `$HOME/.config/alacritty/alacritty.toml`
 4. `$HOME/.alacritty.toml`
 
+## 命令导航器
+
+基于 OSC 133 shell integration 的命令历史导航。需在 `~/.zshrc` 中启用：
+
+```zsh
+preexec() { print -Pn "\e]133;C;\e\\" }
+precmd()  { print -Pn "\e]133;A;\e\\" }
+```
+
+| 快捷键 | 功能 |
+|---|---|
+| **Ctrl+Up** / **Ctrl+Down** | 在历史命令之间跳转 |
+| **Ctrl+Y** | 复制当前命令区域（提示符 + 输入 + 输出） |
+| **Ctrl+Enter** | 跳回底部，退出导航模式 |
+
+导航时自动进入 vi 模式显示光标位置，按 `i` 或 Ctrl+Enter 退出。
+
 ## License
 
 Apache License, Version 2.0

@@ -150,6 +150,11 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
         }
     }
 
+    #[inline]
+    pub fn scroll_limit(&self) -> usize {
+        self.max_scroll_limit
+    }
+
     /// Update the size of the scrollback history.
     pub fn update_history(&mut self, history_size: usize) {
         let current_history_size = self.history_size();
