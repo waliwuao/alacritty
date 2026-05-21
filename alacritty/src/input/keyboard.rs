@@ -1,11 +1,7 @@
 use std::borrow::Cow;
 
 use winit::event::{ElementState, KeyEvent};
-#[cfg(target_os = "macos")]
-use winit::keyboard::ModifiersKeyState;
 use winit::keyboard::{Key, KeyLocation, ModifiersState, NamedKey};
-#[cfg(target_os = "macos")]
-use winit::platform::macos::OptionAsAlt;
 
 use alacritty_terminal::event::EventListener;
 use alacritty_terminal::term::TermMode;
@@ -103,19 +99,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
     }
 
     fn alt_send_esc(&mut self, key: &KeyEvent, text: &str) -> bool {
-        #[cfg(not(target_os = "macos"))]
         let alt_send_esc = self.ctx.modifiers().state().alt_key();
-
-        #[cfg(target_os = "macos")]
-        let alt_send_esc = {
-            let option_as_alt = self.ctx.config().window.option_as_alt();
-            self.ctx.modifiers().state().alt_key()
-                && (option_as_alt == OptionAsAlt::Both
-                    || (option_as_alt == OptionAsAlt::OnlyLeft
-                        && self.ctx.modifiers().lalt_state() == ModifiersKeyState::Pressed)
-                    || (option_as_alt == OptionAsAlt::OnlyRight
-                        && self.ctx.modifiers().ralt_state() == ModifiersKeyState::Pressed))
-        };
 
         match key.logical_key {
             Key::Named(named) => {
@@ -193,8 +177,7 @@ impl<T: EventListener, A: ActionContext<T>> Processor<T, A> {
             // preventing them from being used in bindings
             //
             // For more see https://github.com/rust-windowing/winit/issues/2945.
-            if (cfg!(target_os = "macos") || (cfg!(windows) && mods.control_key()))
-                && mods.alt_key()
+            if mods.control_key() && mods.alt_key()
             {
                 key.key_without_modifiers()
             } else {

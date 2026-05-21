@@ -4,7 +4,6 @@ use std::error::Error;
 use std::fs::File;
 use std::io::Write;
 use std::mem;
-#[cfg(not(windows))]
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -12,7 +11,7 @@ use std::time::Instant;
 
 use glutin::config::Config as GlutinConfig;
 use glutin::display::GetGlDisplay;
-#[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+#[cfg(feature = "x11")]
 use glutin::platform::x11::X11GlConfigExt;
 use log::info;
 use serde_json as json;
@@ -38,7 +37,6 @@ use crate::display::window::Window;
 use crate::event::{
     ActionContext, Event, EventProxy, InlineSearchState, Mouse, SearchState, TouchPurpose,
 };
-#[cfg(unix)]
 use crate::logging::LOG_TARGET_IPC_CONFIG;
 use crate::message_bar::MessageBuffer;
 use crate::scheduler::Scheduler;
@@ -61,9 +59,7 @@ pub struct WindowContext {
     touch: TouchPurpose,
     occluded: bool,
     preserve_title: bool,
-    #[cfg(not(windows))]
     master_fd: RawFd,
-    #[cfg(not(windows))]
     shell_pid: u32,
     window_config: ParsedOptions,
     config: Rc<UiConfig>,
@@ -82,14 +78,6 @@ impl WindowContext {
         let mut identity = config.window.identity.clone();
         options.window_identity.override_identity_config(&mut identity);
 
-        // Windows has different order of GL platform initialization compared to any other platform;
-        // it requires the window first.
-        #[cfg(windows)]
-        let window = Window::new(event_loop, &config, &identity, &mut options)?;
-        #[cfg(windows)]
-        let raw_window_handle = Some(window.raw_window_handle());
-
-        #[cfg(not(windows))]
         let raw_window_handle = None;
 
         let gl_display = renderer::platform::create_gl_display(
@@ -99,13 +87,12 @@ impl WindowContext {
         )?;
         let gl_config = renderer::platform::pick_gl_config(&gl_display, raw_window_handle)?;
 
-        #[cfg(not(windows))]
         let window = Window::new(
             event_loop,
             &config,
             &identity,
             &mut options,
-            #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+            #[cfg(feature = "x11")]
             gl_config.x11_visual(),
         )?;
 
@@ -134,9 +121,6 @@ impl WindowContext {
 
         // Check if new window will be opened as a tab.
         // This must be done before `Window::new()`, which unsets `window_tabbing_id`.
-        #[cfg(target_os = "macos")]
-        let tabbed = options.window_tabbing_id.is_some();
-        #[cfg(not(target_os = "macos"))]
         let tabbed = false;
 
         let window = Window::new(
@@ -144,7 +128,7 @@ impl WindowContext {
             &config,
             &identity,
             &mut options,
-            #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+            #[cfg(feature = "x11")]
             gl_config.x11_visual(),
         )?;
 
@@ -200,9 +184,7 @@ impl WindowContext {
         // reading/writing to the shell.
         let pty = tty::new(&pty_config, display.size_info.into(), display.window.id().into())?;
 
-        #[cfg(not(windows))]
         let master_fd = pty.file().as_raw_fd();
-        #[cfg(not(windows))]
         let shell_pid = pty.child().id();
 
         // Create the pseudoterminal I/O loop.
@@ -236,9 +218,7 @@ impl WindowContext {
             preserve_title,
             terminal,
             display,
-            #[cfg(not(windows))]
             master_fd,
-            #[cfg(not(windows))]
             shell_pid,
             config,
             notifier: Notifier(loop_tx),
@@ -311,13 +291,6 @@ impl WindowContext {
 
         let opaque = self.config.window_opacity() >= 1.;
 
-        // Disable shadows for transparent windows on macOS.
-        #[cfg(target_os = "macos")]
-        self.display.window.set_has_shadow(opaque);
-
-        #[cfg(target_os = "macos")]
-        self.display.window.set_option_as_alt(self.config.window.option_as_alt());
-
         // Change opacity and blur state.
         self.display.window.set_transparent(!opaque);
         self.display.window.set_blur(self.config.window.blur);
@@ -333,13 +306,11 @@ impl WindowContext {
     }
 
     /// Get reference to the window's configuration.
-    #[cfg(unix)]
     pub fn config(&self) -> &UiConfig {
         &self.config
     }
 
     /// Clear the window config overrides.
-    #[cfg(unix)]
     pub fn reset_window_config(&mut self, config: Rc<UiConfig>) {
         // Clear previous window errors.
         self.message_buffer.remove_target(LOG_TARGET_IPC_CONFIG);
@@ -351,7 +322,6 @@ impl WindowContext {
     }
 
     /// Add new window config overrides.
-    #[cfg(unix)]
     pub fn add_window_config(&mut self, config: Rc<UiConfig>, options: &ParsedOptions) {
         // Clear previous window errors.
         self.message_buffer.remove_target(LOG_TARGET_IPC_CONFIG);
@@ -400,7 +370,6 @@ impl WindowContext {
     /// Process events for this terminal window.
     pub fn handle_event(
         &mut self,
-        #[cfg(target_os = "macos")] event_loop: &ActiveEventLoop,
         event_proxy: &EventLoopProxy<Event>,
         clipboard: &mut Clipboard,
         scheduler: &mut Scheduler,
@@ -440,15 +409,11 @@ impl WindowContext {
             dirty: &mut self.dirty,
             occluded: &mut self.occluded,
             terminal: &mut terminal,
-            #[cfg(not(windows))]
             master_fd: self.master_fd,
-            #[cfg(not(windows))]
             shell_pid: self.shell_pid,
             preserve_title: self.preserve_title,
             config: &self.config,
             event_proxy,
-            #[cfg(target_os = "macos")]
-            event_loop,
             clipboard,
             scheduler,
         };

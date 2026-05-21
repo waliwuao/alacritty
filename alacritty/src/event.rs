@@ -9,13 +9,10 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt::Debug;
-#[cfg(not(windows))]
 use std::os::unix::io::RawFd;
-#[cfg(unix)]
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::rc::Rc;
-#[cfg(unix)]
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, f32, mem};
@@ -44,13 +41,10 @@ use alacritty_terminal::term::search::{Match, RegexSearch};
 use alacritty_terminal::term::{self, ClipboardType, Term, TermMode};
 use alacritty_terminal::vte::ansi::NamedColor;
 
-#[cfg(unix)]
-use crate::cli::{IpcConfig, ParsedOptions};
-use crate::cli::{Options as CliOptions, WindowOptions};
+use crate::cli::{IpcConfig, Options as CliOptions, ParsedOptions, WindowOptions};
 use crate::clipboard::Clipboard;
 use crate::config::ui_config::{HintAction, HintInternalAction};
 use crate::config::{self, UiConfig};
-#[cfg(not(windows))]
 use crate::daemon::foreground_process_path;
 use crate::daemon::spawn_daemon;
 use crate::display::color::Rgb;
@@ -60,7 +54,6 @@ use crate::display::{Display, Preedit, SizeInfo};
 use crate::input::{self, ActionContext as _, FONT_SIZE_STEP};
 use crate::logging::{LOG_TARGET_CONFIG, LOG_TARGET_WINIT};
 use crate::message_bar::{Message, MessageBuffer};
-#[cfg(unix)]
 use crate::polling::ipc::{self, SocketReply};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::window_context::WindowContext;
@@ -94,7 +87,6 @@ pub struct Processor {
     windows: HashMap<WindowId, WindowContext, RandomState>,
     proxy: EventLoopProxy<Event>,
     gl_config: Option<GlutinConfig>,
-    #[cfg(unix)]
     global_ipc_options: ParsedOptions,
     cli_options: CliOptions,
     config: Rc<UiConfig>,
@@ -138,7 +130,6 @@ impl Processor {
             config: Rc::new(config),
             clipboard,
             windows: Default::default(),
-            #[cfg(unix)]
             global_ipc_options: Default::default(),
             config_monitor,
         }
@@ -176,7 +167,6 @@ impl Processor {
 
         // Override config with CLI/IPC options.
         let mut config_overrides = options.config_overrides();
-        #[cfg(unix)]
         config_overrides.extend_from_slice(&self.global_ipc_options);
         let mut config = self.config.clone();
         config = config_overrides.override_config_rc(config);
@@ -269,8 +259,6 @@ impl ApplicationHandler<Event> for Processor {
         let is_redraw = matches!(event, WindowEvent::RedrawRequested);
 
         window_context.handle_event(
-            #[cfg(target_os = "macos")]
-            _event_loop,
             &self.proxy,
             &mut self.clipboard,
             &mut self.scheduler,
@@ -290,7 +278,6 @@ impl ApplicationHandler<Event> for Processor {
         // Handle events which don't mandate the WindowId.
         match (event.payload, event.window_id.as_ref()) {
             // Process IPC config update.
-            #[cfg(unix)]
             (EventType::IpcConfig(ipc_config), window_id) => {
                 // Try and parse options as toml.
                 let mut options = ParsedOptions::from_options(&ipc_config.options);
@@ -318,7 +305,6 @@ impl ApplicationHandler<Event> for Processor {
                 }
             },
             // Process IPC config requests.
-            #[cfg(unix)]
             (EventType::IpcGetConfig(stream), window_id) => {
                 // Get the config for the requested window ID.
                 let config = match self.windows.iter().find(|(id, _)| window_id == Some(*id)) {
@@ -390,16 +376,13 @@ impl ApplicationHandler<Event> for Processor {
                 }
             },
             // Shutdown all windows.
-            #[cfg(unix)]
             (EventType::Shutdown, _) => event_loop.exit(),
             // Process events affecting all windows.
             (payload, None) => {
                 let event = WinitEvent::UserEvent(Event::new(payload, None));
                 for window_context in self.windows.values_mut() {
-                    window_context.handle_event(
-                        #[cfg(target_os = "macos")]
-                        event_loop,
-                        &self.proxy,
+            window_context.handle_event(
+                &self.proxy,
                         &mut self.clipboard,
                         &mut self.scheduler,
                         event.clone(),
@@ -451,8 +434,6 @@ impl ApplicationHandler<Event> for Processor {
             (payload, Some(window_id)) => {
                 if let Some(window_context) = self.windows.get_mut(window_id) {
                     window_context.handle_event(
-                        #[cfg(target_os = "macos")]
-                        event_loop,
                         &self.proxy,
                         &mut self.clipboard,
                         &mut self.scheduler,
@@ -470,10 +451,8 @@ impl ApplicationHandler<Event> for Processor {
 
         // Dispatch event to all windows.
         for window_context in self.windows.values_mut() {
-            window_context.handle_event(
-                #[cfg(target_os = "macos")]
-                event_loop,
-                &self.proxy,
+                    window_context.handle_event(
+                        &self.proxy,
                 &mut self.clipboard,
                 &mut self.scheduler,
                 WinitEvent::AboutToWait,
@@ -494,20 +473,18 @@ impl ApplicationHandler<Event> for Processor {
             info!("Exiting the event loop");
         }
 
-        match self.gl_config.take().map(|config| config.display()) {
-            #[cfg(not(target_os = "macos"))]
-            Some(glutin::display::Display::Egl(display)) => {
-                // Ensure that all the windows are dropped, so the destructors for
-                // Renderer and contexts ran.
-                self.windows.clear();
+        if let Some(glutin::display::Display::Egl(display)) =
+            self.gl_config.take().map(|config| config.display())
+        {
+            // Ensure that all the windows are dropped, so the destructors for
+            // Renderer and contexts ran.
+            self.windows.clear();
 
-                // SAFETY: the display is being destroyed after destroying all the
-                // windows, thus no attempt to access the EGL state will be made.
-                unsafe {
-                    display.terminate();
-                }
-            },
-            _ => (),
+            // SAFETY: the display is being destroyed after destroying all the
+            // windows, thus no attempt to access the EGL state will be made.
+            unsafe {
+                display.terminate();
+            }
         }
 
         // SAFETY: The clipboard must be dropped before the event loop, so use the nop clipboard
@@ -546,14 +523,11 @@ pub enum EventType {
     Message(Message),
     Scroll(Scroll),
     CreateWindow(WindowOptions),
-    #[cfg(unix)]
     IpcConfig(IpcConfig),
-    #[cfg(unix)]
     IpcGetConfig(Arc<UnixStream>),
     BlinkCursor,
     BlinkCursorTimeout,
     SearchNext,
-    #[cfg(unix)]
     Shutdown,
     Frame,
 }
@@ -672,8 +646,6 @@ pub struct ActionContext<'a, N, T> {
     pub config: &'a UiConfig,
     pub cursor_blink_timed_out: &'a mut bool,
     pub prev_bell_cmd: &'a mut Option<Instant>,
-    #[cfg(target_os = "macos")]
-    pub event_loop: &'a ActiveEventLoop,
     pub event_proxy: &'a EventLoopProxy<Event>,
     pub scheduler: &'a mut Scheduler,
     pub search_state: &'a mut SearchState,
@@ -681,9 +653,7 @@ pub struct ActionContext<'a, N, T> {
     pub dirty: &'a mut bool,
     pub occluded: &'a mut bool,
     pub preserve_title: bool,
-    #[cfg(not(windows))]
     pub master_fd: RawFd,
-    #[cfg(not(windows))]
     pub shell_pid: u32,
 }
 
@@ -868,8 +838,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
                 break;
             }
 
-            // On unix, the working directory of the foreground shell is used by `start_daemon`.
-            #[cfg(not(windows))]
+            // The working directory of the foreground shell is used by `spawn_daemon`.
             if arg == "--working-directory" {
                 let _ = env_args.next();
                 continue;
@@ -881,25 +850,12 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.spawn_daemon(&alacritty, &args);
     }
 
-    #[cfg(not(windows))]
-    fn create_new_window(&mut self, #[cfg(target_os = "macos")] tabbing_id: Option<String>) {
+    fn create_new_window(&mut self) {
         let mut options = WindowOptions::default();
         options.terminal_options.working_directory =
             foreground_process_path(self.master_fd, self.shell_pid).ok();
 
-        #[cfg(target_os = "macos")]
-        {
-            options.window_tabbing_id = tabbing_id;
-        }
-
         let _ = self.event_proxy.send_event(Event::new(EventType::CreateWindow(options), None));
-    }
-
-    #[cfg(windows)]
-    fn create_new_window(&mut self) {
-        let _ = self
-            .event_proxy
-            .send_event(Event::new(EventType::CreateWindow(WindowOptions::default()), None));
     }
 
     fn spawn_daemon<I, S>(&self, program: &str, args: I)
@@ -907,10 +863,7 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         I: IntoIterator<Item = S> + Debug + Copy,
         S: AsRef<OsStr>,
     {
-        #[cfg(not(windows))]
         let result = spawn_daemon(program, args, self.master_fd, self.shell_pid);
-        #[cfg(windows)]
-        let result = spawn_daemon(program, args);
 
         match result {
             Ok(_) => debug!("Launched {program} with args {args:?}"),
@@ -1485,11 +1438,6 @@ impl<'a, N: Notify + 'a, T: EventListener> input::ActionContext<T> for ActionCon
         self.config
     }
 
-    #[cfg(target_os = "macos")]
-    fn event_loop(&self) -> &ActiveEventLoop {
-        self.event_loop
-    }
-
     fn clipboard_mut(&mut self) -> &mut Clipboard {
         self.clipboard
     }
@@ -1928,7 +1876,6 @@ impl input::Processor<EventProxy, ActionContext<'_, Notifier, EventProxy>> {
                     TerminalEvent::CursorBlinkingChange => self.ctx.update_cursor_blinking(),
                     TerminalEvent::Exit | TerminalEvent::ChildExit(_) | TerminalEvent::Wakeup => (),
                 },
-                #[cfg(unix)]
                 EventType::IpcConfig(_) | EventType::IpcGetConfig(..) | EventType::Shutdown => (),
                 EventType::Message(_)
                 | EventType::ConfigReload(_)

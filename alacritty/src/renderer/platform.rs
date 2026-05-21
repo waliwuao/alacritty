@@ -13,7 +13,7 @@ use glutin::surface::{Surface, SurfaceAttributesBuilder, WindowSurface};
 use log::{LevelFilter, debug};
 
 use winit::dpi::PhysicalSize;
-#[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+#[cfg(feature = "x11")]
 use winit::platform::x11;
 use winit::raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 
@@ -23,24 +23,14 @@ pub fn create_gl_display(
     _raw_window_handle: Option<RawWindowHandle>,
     _prefer_egl: bool,
 ) -> GlutinResult<Display> {
-    #[cfg(target_os = "macos")]
-    let preference = DisplayApiPreference::Cgl;
-
-    #[cfg(windows)]
-    let preference = if _prefer_egl {
-        DisplayApiPreference::EglThenWgl(Some(_raw_window_handle.unwrap()))
-    } else {
-        DisplayApiPreference::WglThenEgl(Some(_raw_window_handle.unwrap()))
-    };
-
-    #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+    #[cfg(feature = "x11")]
     let preference = if _prefer_egl {
         DisplayApiPreference::EglThenGlx(Box::new(x11::register_xlib_error_hook))
     } else {
         DisplayApiPreference::GlxThenEgl(Box::new(x11::register_xlib_error_hook))
     };
 
-    #[cfg(all(not(feature = "x11"), not(any(target_os = "macos", windows))))]
+    #[cfg(not(feature = "x11"))]
     let preference = DisplayApiPreference::Egl;
 
     let display = unsafe { Display::new(raw_display_handle, preference)? };

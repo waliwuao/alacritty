@@ -3,13 +3,8 @@
 #![warn(rust_2018_idioms, future_incompatible)]
 #![deny(clippy::all, clippy::if_not_else, clippy::enum_glob_use)]
 #![cfg_attr(clippy, deny(warnings))]
-// With the default subsystem, 'console', windows creates an additional console
-// window for the program.
-// This is silently ignored on non-windows systems.
-// See https://msdn.microsoft.com/en-us/library/4cc7ya5b.aspx for more details.
-#![windows_subsystem = "windows"]
 
-#[cfg(not(any(feature = "x11", feature = "wayland", target_os = "macos", windows)))]
+#[cfg(not(any(feature = "x11", feature = "wayland")))]
 compile_error!(r#"at least one of the "x11"/"wayland" features must be enabled"#);
 
 use std::error::Error;
@@ -19,10 +14,8 @@ use std::path::PathBuf;
 use std::{env, fs};
 
 use log::info;
-#[cfg(windows)]
-use windows_sys::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole, FreeConsole};
 use winit::event_loop::EventLoop;
-#[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+#[cfg(feature = "x11")]
 use winit::raw_window_handle::{HasDisplayHandle, RawDisplayHandle};
 
 use alacritty_terminal::tty;
@@ -35,13 +28,8 @@ mod display;
 mod event;
 mod input;
 mod logging;
-#[cfg(target_os = "macos")]
-mod macos;
 mod message_bar;
 mod migrate;
-#[cfg(windows)]
-mod panic;
-#[cfg(unix)]
 mod polling;
 mod renderer;
 mod scheduler;
@@ -53,36 +41,19 @@ mod gl {
     include!(concat!(env!("OUT_DIR"), "/gl_bindings.rs"));
 }
 
-#[cfg(unix)]
 use crate::cli::MessageOptions;
-#[cfg(not(any(target_os = "macos", windows)))]
 use crate::cli::SocketMessage;
 use crate::cli::{Options, Subcommands};
 use crate::config::UiConfig;
 use crate::config::monitor::ConfigMonitor;
 use crate::event::{Event, Processor};
-#[cfg(target_os = "macos")]
-use crate::macos::locale;
-#[cfg(unix)]
 use crate::polling::{IoListener, ipc};
 
 fn main() -> Result<(), Box<dyn Error>> {
-    #[cfg(windows)]
-    panic::attach_handler();
-
-    // When linked with the windows subsystem windows won't automatically attach
-    // to the console of the parent process, so we do it explicitly. This fails
-    // silently if the parent has no console.
-    #[cfg(windows)]
-    unsafe {
-        AttachConsole(ATTACH_PARENT_PROCESS);
-    }
-
     // Load command line options.
     let options = Options::new();
 
     match options.subcommands {
-        #[cfg(unix)]
         Some(Subcommands::Msg(options)) => msg(options)?,
         Some(Subcommands::Migrate(options)) => migrate::migrate(options),
         None => alacritty(options)?,
@@ -92,10 +63,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 /// `msg` subcommand entrypoint.
-#[cfg(unix)]
 #[allow(unused_mut)]
 fn msg(mut options: MessageOptions) -> Result<(), Box<dyn Error>> {
-    #[cfg(not(any(target_os = "macos", windows)))]
     if let SocketMessage::CreateWindow(window_options) = &mut options.message {
         window_options.activation_token =
             env::var("XDG_ACTIVATION_TOKEN").or_else(|_| env::var("DESKTOP_STARTUP_ID")).ok();
@@ -107,7 +76,6 @@ fn msg(mut options: MessageOptions) -> Result<(), Box<dyn Error>> {
 ///
 /// This stores temporary files to automate their destruction through its `Drop` implementation.
 struct TemporaryFiles {
-    #[cfg(unix)]
     socket_path: Option<PathBuf>,
     log_file: Option<PathBuf>,
 }
@@ -115,7 +83,6 @@ struct TemporaryFiles {
 impl Drop for TemporaryFiles {
     fn drop(&mut self) {
         // Clean up the IPC socket file.
-        #[cfg(unix)]
         if let Some(socket_path) = self.socket_path.as_deref() {
             let _ = fs::remove_file(socket_path);
         }
@@ -144,7 +111,7 @@ fn alacritty(mut options: Options) -> Result<(), Box<dyn Error>> {
     info!("Welcome to Alacritty");
     info!("Version {}", env!("VERSION"));
 
-    #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
+    #[cfg(feature = "x11")]
     info!(
         "Running on {}",
         if matches!(
@@ -156,7 +123,7 @@ fn alacritty(mut options: Options) -> Result<(), Box<dyn Error>> {
             "X11"
         }
     );
-    #[cfg(not(any(feature = "x11", target_os = "macos", windows)))]
+    #[cfg(not(feature = "x11"))]
     info!("Running on Wayland");
 
     // Load configuration file.
@@ -174,19 +141,7 @@ fn alacritty(mut options: Options) -> Result<(), Box<dyn Error>> {
         unsafe { env::set_var(key, value) };
     }
 
-    // Switch to home directory.
-    #[cfg(target_os = "macos")]
-    env::set_current_dir(home::home_dir().unwrap()).unwrap();
-
-    // Set macOS locale.
-    #[cfg(target_os = "macos")]
-    locale::set_locale_environment();
-
-    #[cfg(target_os = "macos")]
-    macos::disable_autofill();
-
     // Spawn the Unix I/O event polling thread.
-    #[cfg(unix)]
     let socket_path = match IoListener::spawn(&config, &options, window_event_loop.create_proxy()) {
         Ok(handle) => handle.ipc_socket_path,
         Err(err) if options.daemon => return Err(err.into()),
@@ -199,7 +154,6 @@ fn alacritty(mut options: Options) -> Result<(), Box<dyn Error>> {
     // Setup automatic RAII cleanup for our files.
     let log_cleanup = log_file.filter(|_| !config.debug.persistent_logging);
     let _files = TemporaryFiles {
-        #[cfg(unix)]
         socket_path,
         log_file: log_cleanup,
     };
@@ -210,29 +164,9 @@ fn alacritty(mut options: Options) -> Result<(), Box<dyn Error>> {
     // Start event loop and block until shutdown.
     let result = processor.run(window_event_loop);
 
-    // `Processor` must be dropped before calling `FreeConsole`.
-    //
-    // This is needed for ConPTY backend. Otherwise a deadlock can occur.
-    // The cause:
-    //   - Drop for ConPTY will deadlock if the conout pipe has already been dropped
-    //   - ConPTY is dropped when the last of processor and window context are dropped, because both
-    //     of them own an Arc<ConPTY>
-    //
-    // The fix is to ensure that processor is dropped first. That way, when window context (i.e.
-    // PTY) is dropped, it can ensure ConPTY is dropped before the conout pipe in the PTY drop
-    // order.
-    //
-    // FIXME: Change PTY API to enforce the correct drop order with the typesystem.
-
     // Terminate the config monitor.
     if let Some(config_monitor) = processor.config_monitor.take() {
         config_monitor.shutdown();
-    }
-
-    // Without explicitly detaching the console cmd won't redraw it's prompt.
-    #[cfg(windows)]
-    unsafe {
-        FreeConsole();
     }
 
     info!("Goodbye");

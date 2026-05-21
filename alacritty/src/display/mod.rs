@@ -40,7 +40,6 @@ use crate::config::UiConfig;
 use crate::config::debug::RendererPreference;
 use crate::config::font::Font;
 use crate::config::window::Dimensions;
-#[cfg(not(windows))]
 use crate::config::window::StartupMode;
 use crate::display::bell::VisualBell;
 use crate::display::color::{List, Rgb};
@@ -469,10 +468,6 @@ impl Display {
         let background_color = config.colors.primary.background;
         renderer.clear(background_color, config.window_opacity());
 
-        // Disable shadows for transparent windows on macOS.
-        #[cfg(target_os = "macos")]
-        window.set_has_shadow(config.window_opacity() >= 1.0);
-
         let is_wayland = matches!(raw_window_handle, RawWindowHandle::Wayland(_));
 
         // On Wayland we can safely ignore this call, since the window isn't visible until you
@@ -489,16 +484,9 @@ impl Display {
 
         window.set_visible(true);
 
-        // Always focus new windows, even if no Alacritty window is currently focused.
-        #[cfg(target_os = "macos")]
-        window.focus_window();
-
         #[allow(clippy::single_match)]
-        #[cfg(not(windows))]
         if !_tabbed {
             match config.window.startup_mode {
-                #[cfg(target_os = "macos")]
-                StartupMode::SimpleFullscreen => window.set_simple_fullscreen(true),
                 StartupMode::Maximized if !is_wayland => window.set_maximized(true),
                 _ => (),
             }
@@ -607,7 +595,6 @@ impl Display {
     fn swap_buffers(&self) {
         #[allow(clippy::single_match)]
         let res = match (self.surface.deref(), &self.context.deref()) {
-            #[cfg(not(any(target_os = "macos", windows)))]
             (Surface::Egl(surface), PossiblyCurrentContext::Egl(context))
                 if matches!(self.raw_window_handle, RawWindowHandle::Wayland(_))
                     && !self.damage_tracker.debug =>
@@ -845,10 +832,6 @@ impl Display {
         // Draw grid.
         {
             let _sampler = self.meter.sampler();
-
-            // Ensure macOS hasn't reset our viewport.
-            #[cfg(target_os = "macos")]
-            self.renderer.set_viewport(&size_info);
 
             let glyph_cache = &mut self.glyph_cache;
             let highlighted_hint = &self.highlighted_hint;

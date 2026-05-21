@@ -8,15 +8,8 @@ use std::{env, io};
 
 use polling::{Event, PollMode, Poller};
 
-#[cfg(not(windows))]
 mod unix;
-#[cfg(not(windows))]
 pub use self::unix::*;
-
-#[cfg(windows)]
-pub mod windows;
-#[cfg(windows)]
-pub use self::windows::*;
 
 /// Configuration for the `Pty` interface.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -34,13 +27,6 @@ pub struct Options {
 
     /// Extra environment variables.
     pub env: HashMap<String, String>,
-
-    /// Specifies whether the Windows shell arguments should be escaped.
-    ///
-    /// - When `true`: Arguments will be escaped according to the standard C runtime rules.
-    /// - When `false`: Arguments will be passed raw without additional escaping.
-    #[cfg(target_os = "windows")]
-    pub escape_args: bool,
 }
 
 /// Shell options.

@@ -9,8 +9,6 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
-#[cfg(target_os = "macos")]
-use std::path::Path;
 use std::process::{Child, Command};
 use std::sync::Arc;
 use std::{env, ptr};
@@ -20,7 +18,6 @@ use log::error;
 use polling::{Event, PollMode, Poller};
 use rustix_openpty::openpty;
 use rustix_openpty::rustix::termios::Winsize;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 use rustix_openpty::rustix::termios::{self, InputModes, OptionalActions};
 use signal_hook::low_level::{pipe as signal_pipe, unregister as unregister_signal};
 use signal_hook::{SigId, consts as sigconsts};
@@ -158,37 +155,8 @@ impl ShellUser {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
 fn default_shell_command(shell: &str, _user: &str, _home: &str) -> Command {
     Command::new(shell)
-}
-
-#[cfg(target_os = "macos")]
-fn default_shell_command(shell: &str, user: &str, home: &str) -> Command {
-    let shell_name = shell.rsplit('/').next().unwrap();
-
-    // On macOS, use the `login` command so the shell will appear as a tty session.
-    let mut login_command = Command::new("/usr/bin/login");
-
-    // Exec the shell with argv[0] prepended by '-' so it becomes a login shell.
-    // `login` normally does this itself, but `-l` disables this.
-    let exec = format!("exec -a -{} {}", shell_name, shell);
-
-    // Since we use -l, `login` will not change directory to the user's home. However,
-    // `login` only checks the current working directory for a .hushlogin file, causing
-    // it to miss any in the user's home directory. We can fix this by doing the check
-    // ourselves and passing `-q`
-    let has_home_hushlogin = Path::new(home).join(".hushlogin").exists();
-
-    // -f: Bypasses authentication for the already-logged-in user.
-    // -l: Skips changing directory to $HOME and prepending '-' to argv[0].
-    // -p: Preserves the environment.
-    // -q: Act as if `.hushlogin` exists.
-    //
-    // XXX: we use zsh here over sh due to `exec -a`.
-    let flags = if has_home_hushlogin { "-qflp" } else { "-flp" };
-    login_command.args([flags, user, "/bin/zsh", "-fc", &exec]);
-    login_command
 }
 
 /// Create a new TTY and return a handle to interact with it.
@@ -203,7 +171,6 @@ pub fn from_fd(config: &Options, window_id: u64, master: OwnedFd, slave: OwnedFd
     let master_fd = master.as_raw_fd();
     let slave_fd = slave.as_raw_fd();
 
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
     if let Ok(mut termios) = termios::tcgetattr(&master) {
         // Set character encoding to UTF-8.
         termios.input_modes.set(InputModes::IUTF8, true);

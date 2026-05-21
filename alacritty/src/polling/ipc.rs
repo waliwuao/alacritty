@@ -150,7 +150,6 @@ fn send_reply_fallible(stream: &mut UnixStream, message: SocketReply) -> IoResul
 }
 
 /// Directory for the IPC socket file.
-#[cfg(not(target_os = "macos"))]
 pub fn socket_dir() -> PathBuf {
     xdg::BaseDirectories::with_prefix("alacritty")
         .get_runtime_directory()
@@ -158,12 +157,6 @@ pub fn socket_dir() -> PathBuf {
         .ok()
         .and_then(|path| fs::create_dir_all(&path).map(|_| path).ok())
         .unwrap_or_else(env::temp_dir)
-}
-
-/// Directory for the IPC socket file.
-#[cfg(target_os = "macos")]
-pub fn socket_dir() -> PathBuf {
-    env::temp_dir()
 }
 
 /// Find the IPC socket path.
@@ -219,16 +212,9 @@ fn find_socket(socket_path: Option<PathBuf>) -> IoResult<UnixStream> {
 ///
 /// This prefix will include display server information to allow for environments with multiple
 /// display servers running for the same user.
-#[cfg(not(target_os = "macos"))]
 pub fn socket_prefix() -> String {
     let display = env::var("WAYLAND_DISPLAY").or_else(|_| env::var("DISPLAY")).unwrap_or_default();
     format!("Alacritty-{}", display.replace('/', "-"))
-}
-
-/// File prefix matching all available sockets.
-#[cfg(target_os = "macos")]
-pub fn socket_prefix() -> String {
-    String::from("Alacritty")
 }
 
 /// IPC socket replies.

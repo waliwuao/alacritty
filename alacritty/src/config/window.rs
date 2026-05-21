@@ -4,8 +4,6 @@ use log::{error, warn};
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 
-#[cfg(target_os = "macos")]
-use winit::platform::macos::OptionAsAlt as WinitOptionAsAlt;
 use winit::window::{Fullscreen, Theme as WinitTheme, WindowLevel as WinitWindowLevel};
 
 use alacritty_config_derive::{ConfigDeserialize, SerdeReplace};
@@ -138,16 +136,6 @@ impl WindowConfig {
     #[inline]
     pub fn maximized(&self) -> bool {
         self.startup_mode == StartupMode::Maximized
-    }
-
-    #[cfg(target_os = "macos")]
-    pub fn option_as_alt(&self) -> WinitOptionAsAlt {
-        match self.option_as_alt {
-            OptionAsAlt::OnlyLeft => WinitOptionAsAlt::OnlyLeft,
-            OptionAsAlt::OnlyRight => WinitOptionAsAlt::OnlyRight,
-            OptionAsAlt::Both => WinitOptionAsAlt::Both,
-            OptionAsAlt::None => WinitOptionAsAlt::None,
-        }
     }
 
     pub fn theme(&self) -> Option<WinitTheme> {

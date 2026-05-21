@@ -35,22 +35,10 @@ pub struct Options {
 
     /// Specify alternative configuration file [default:
     /// $XDG_CONFIG_HOME/alacritty/alacritty.toml].
-    #[cfg(not(any(target_os = "macos", windows)))]
-    #[clap(long, value_hint = ValueHint::FilePath)]
-    pub config_file: Option<PathBuf>,
-
-    /// Specify alternative configuration file [default: %APPDATA%\alacritty\alacritty.toml].
-    #[cfg(windows)]
-    #[clap(long, value_hint = ValueHint::FilePath)]
-    pub config_file: Option<PathBuf>,
-
-    /// Specify alternative configuration file [default: $HOME/.config/alacritty/alacritty.toml].
-    #[cfg(target_os = "macos")]
     #[clap(long, value_hint = ValueHint::FilePath)]
     pub config_file: Option<PathBuf>,
 
     /// Path for IPC socket creation.
-    #[cfg(unix)]
     #[clap(long, value_hint = ValueHint::FilePath)]
     pub socket: Option<PathBuf>,
 
@@ -91,7 +79,6 @@ impl Options {
 
     /// Override configuration file with options from the CLI.
     pub fn override_config(&mut self, config: &mut UiConfig) {
-        #[cfg(unix)]
         if self.socket.is_some() {
             config.ipc_socket = Some(true);
         }
@@ -200,8 +187,6 @@ impl From<TerminalOptions> for PtyOptions {
             shell: options.command().map(Into::into),
             drain_on_exit: options.hold,
             env: HashMap::new(),
-            #[cfg(target_os = "windows")]
-            escape_args: false,
         }
     }
 }
@@ -233,13 +218,11 @@ impl WindowIdentity {
 /// Available CLI subcommands.
 #[derive(Subcommand, Debug)]
 pub enum Subcommands {
-    #[cfg(unix)]
     Msg(MessageOptions),
     Migrate(MigrateOptions),
 }
 
 /// Send a message to the Alacritty socket.
-#[cfg(unix)]
 #[derive(Args, Debug)]
 pub struct MessageOptions {
     /// IPC socket connection path override.
@@ -252,7 +235,6 @@ pub struct MessageOptions {
 }
 
 /// Available socket messages.
-#[cfg(unix)]
 #[derive(Subcommand, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum SocketMessage {
     /// Create a new window in the same Alacritty process.
@@ -301,12 +283,6 @@ pub struct WindowOptions {
     pub window_identity: WindowIdentity,
 
     #[clap(skip)]
-    #[cfg(target_os = "macos")]
-    /// The window tabbing identifier to use when building a window.
-    pub window_tabbing_id: Option<String>,
-
-    #[clap(skip)]
-    #[cfg(not(any(target_os = "macos", windows)))]
     /// `ActivationToken` that we pass to winit.
     pub activation_token: Option<String>,
 
@@ -323,7 +299,6 @@ impl WindowOptions {
 }
 
 /// Parameters to the `config` IPC subcommand.
-#[cfg(unix)]
 #[derive(Args, Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct IpcConfig {
     /// Configuration file options [example: 'cursor.style="Beam"'].
@@ -342,7 +317,6 @@ pub struct IpcConfig {
 }
 
 /// Parameters to the `get-config` IPC subcommand.
-#[cfg(unix)]
 #[derive(Args, Serialize, Deserialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct IpcGetConfig {
     /// Window ID for the config request.
@@ -428,14 +402,10 @@ impl DerefMut for ParsedOptions {
 mod tests {
     use super::*;
 
-    #[cfg(target_os = "linux")]
     use std::fs::File;
-    #[cfg(target_os = "linux")]
     use std::io::Read;
 
-    #[cfg(target_os = "linux")]
     use clap::CommandFactory;
-    #[cfg(target_os = "linux")]
     use clap_complete::Shell;
     use toml::Table;
 
@@ -534,7 +504,6 @@ mod tests {
         assert_eq!(value, None);
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
     fn completions() {
         let mut clap = Options::command();
